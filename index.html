@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Website URL Crawler</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Website URL Crawler</h1>
+        <div class="input-section">
+            <div class="url-depth-row">
+                <div class="form-group url-input">
+                    <label for="startUrl">Starting URL:</label>
+                    <input type="url" id="startUrl" placeholder="https://example.com" required>
+                </div>
+                <div class="form-group depth-input">
+                    <label for="maxDepth">Maximum Depth:</label>
+                    <input type="number" id="maxDepth" min="0" value="1">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="exclusionRules">Exclusion Rules (one per line):</label>
+                <textarea id="exclusionRules" rows="3" placeholder="Enter URL patterns to exclude"></textarea>
+            </div>
+
+            <div class="checkbox-group">
+                <div class="checkbox-item">
+                    <input type="checkbox" id="respectRobotsTxt" checked>
+                    <label for="respectRobotsTxt" title="Follow rules set in robots.txt files">Respect robots.txt</label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="useDynamicCrawling">
+                    <label for="useDynamicCrawling" title="Uses Puppeteer to render JavaScript and capture dynamically loaded content. Best for modern web apps using React, Vue, Angular, etc. May be significantly slower.">Use dynamic crawling</label>
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button id="startButton">Start Crawling</button>
+                <button id="exportButton" disabled>Export JSON</button>
+            </div>
+        </div>
+
+        <div class="progress-section">
+            <div class="stats">
+                <div class="status-row">
+                    <div class="stat-item">
+                        <label>Status:</label>
+                        <span id="status">Ready</span>
+                    </div>
+                    <div class="stat-item">
+                        <label>Time Elapsed:</label>
+                        <span id="elapsedTime">00:00:00</span>
+                    </div>
+                </div>
+                <div class="counters-row">
+                    <div class="stat-pill" title="Total number of URLs discovered across all pages">
+                        <span class="stat-label">Found:</span>
+                        <span id="totalFound" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-pill" title="Number of URLs that have been analyzed (including rejected ones)">
+                        <span class="stat-label">Processed:</span>
+                        <span id="processedCount" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-pill" title="Number of valid URLs that were successfully crawled">
+                        <span class="stat-label">Accepted:</span>
+                        <span id="acceptedCount" class="stat-value">0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="depth-stats-section" style="display: none;">
+            <div class="depth-stats-header">
+                <h3>URLs by Depth</h3>
+            </div>
+            <div id="depthStats" class="depth-stats"></div>
+        </div>
+
+        <div class="url-stream-section">
+            <div class="stream-header">
+                <h3>URL Stream</h3>
+                <div class="stream-controls">
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="autoScroll" checked>
+                        <label for="autoScroll">Auto-scroll</label>
+                    </div>
+                    <button id="resetDepthFilter" disabled>Reset Filter</button>
+                    <button id="clearStream">Clear Stream</button>
+                </div>
+            </div>
+            <div id="urlStream" class="url-stream"></div>
+        </div>
+    </div>
+    <script src="crawler.js"></script>
+</body>
+</html>
