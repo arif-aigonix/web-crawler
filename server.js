@@ -6,7 +6,11 @@ const puppeteer = require('puppeteer');
 const RobotsParser = require('./robots-parser');
 
 const app = express();
+const host = '0.0.0.0';
 const port = 3000;
+
+// Enable trust proxy for Replit
+app.set('trust proxy', true);
 
 // Store robots.txt data for different domains
 const robotsCache = new Map();
@@ -147,15 +151,13 @@ let browser = null;
 async function getBrowser() {
     if (!browser) {
         browser = await puppeteer.launch({
-            headless: 'new',
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--disable-gpu',
-                '--window-size=1280,800'
-            ]
+                '--single-process'
+            ],
+            headless: 'new'
         });
     }
     return browser;
@@ -321,6 +323,6 @@ app.post('/api/crawl', async (req, res) => {
     }
 });
 
-app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
+app.listen(port, host, () => {
+    console.log(`Server running on ${host}:${port}`);
 });

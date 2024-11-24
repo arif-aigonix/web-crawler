@@ -1,12 +1,18 @@
-modules = ["nodejs-20", "web"]
-run = "npm run dev"
+modules = ["nodejs-20:v8-20230920-bd784b9"]
+run = "npm install && npm run dev"
+entrypoint = "server.js"
 
 [nix]
 channel = "stable-24_05"
 
 [deployment]
 run = ["sh", "-c", "npm run dev"]
+deploymentTarget = "cloudrun"
 
 [[ports]]
 localPort = 3000
 externalPort = 80
+
+[[ports]]
+localPort = 40945
+externalPort = 3000
