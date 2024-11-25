@@ -8,7 +8,7 @@ const HeadlessCrawler = require('./headless-crawler');
 
 const app = express();
 const host = '0.0.0.0';
-const port = process.env.PORT || 3001;
+const port = 3000;
 
 // Enable trust proxy for Replit
 app.set('trust proxy', true);
@@ -79,7 +79,7 @@ function isAllowedByRobots(robotsTxt, url) {
     return parser.isAllowed(url);
 }
 
-const userAgent = 'Mozilla/5.0 (compatible; CascadeCrawler/1.0; +http://localhost:3000)';
+const userAgent = 'Mozilla/5.0 (compatible; CascadeCrawler/1.0; +https://e15f155f-c77a-4443-963a-5f5225dc327c-00-gmrpj3dapkv4.picard.replit.dev)';
 
 async function detectFramework(url) {
     try {
@@ -159,15 +159,26 @@ let browser = null;
 // Function to get or create a browser instance
 async function getBrowser() {
     if (!browser) {
-        browser = await puppeteer.launch({
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--single-process'
-            ],
-            headless: 'new'
-        });
+        try {
+            browser = await puppeteer.launch({
+                headless: 'new',
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--disable-gpu',
+                    '--no-first-run',
+                    '--no-zygote',
+                    '--single-process'
+                ],
+                executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null,
+                ignoreDefaultArgs: ['--disable-extensions']
+            });
+        } catch (error) {
+            console.error('Failed to launch browser:', error);
+            throw error;
+        }
     }
     return browser;
 }
@@ -291,9 +302,31 @@ app.post('/fetch', async (req, res) => {
             const browser = await getBrowser();
             const page = await browser.newPage();
             try {
-                await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
+                // Set viewport and user agent
+                await page.setViewport({ width: 1920, height: 1080 });
+                await page.setUserAgent(userAgent);
+
+                // Enable JavaScript and wait for network to be idle
+                await page.setJavaScriptEnabled(true);
+                await page.goto(url, { 
+                    waitUntil: ['networkidle0', 'domcontentloaded', 'load'],
+                    timeout: 30000 
+                });
+
+                // Replace waitForTimeout with setTimeout wrapped in Promise
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                // Get the final URL after any redirects
+                const finalUrl = page.url();
+
+                // Get the rendered HTML
                 const html = await page.content();
-                res.json({ html });
+
+                res.json({ 
+                    html,
+                    finalUrl,
+                    dynamicContent: true
+                });
             } catch (error) {
                 res.status(500).json({ 
                     error: `Failed to fetch page: ${error.message}`,
@@ -303,17 +336,22 @@ app.post('/fetch', async (req, res) => {
                 await page.close();
             }
         } else {
+            // Handle non-Puppeteer fetch here
             const response = await fetch(url, {
                 headers: {
                     'User-Agent': userAgent
                 }
             });
             const html = await response.text();
-            res.json({ html });
+            res.json({ 
+                html,
+                finalUrl: response.url,
+                dynamicContent: false
+            });
         }
     } catch (error) {
         res.status(500).json({ 
-            error: `Failed to fetch page: ${error.message}`,
+            error: error.message || 'Failed to fetch page',
             html: null 
         });
     }
@@ -322,13 +360,13 @@ app.post('/fetch', async (req, res) => {
 // Only start the server if not being required by another module (e.g. tests)
 if (require.main === module) {
     const server = app.listen(port, host, () => {
-        console.log(`Server running on http://${host}:${port}`);
+        console.log(`Server running on port ${port}`);
     }).on('error', (err) => {
         if (err.code === 'EADDRINUSE') {
             console.error(`Port ${port} is already in use. Trying port ${port + 1}`);
             server.close();
             app.listen(port + 1, host, () => {
-                console.log(`Server running on http://${host}:${port + 1}`);
+                console.log(`Server running on port ${port + 1}`);
             });
         } else {
             console.error('Server error:', err);

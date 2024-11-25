@@ -1,5 +1,5 @@
 modules = ["nodejs-20:v8-20230920-bd784b9"]
-run = "npm install && npm run dev"
+run = "node server.js"
 entrypoint = "server.js"
 
 [nix]
@@ -9,22 +9,35 @@ channel = "stable-24_05"
 run = ["sh", "-c", "npm run dev"]
 deploymentTarget = "cloudrun"
 
+[packager]
+language = "nodejs"
+
+[packager.features]
+packageSearch = true
+guessImports = true
+
+[languages]
+
+[languages.javascript]
+pattern = "**/{*.js,*.jsx,*.ts,*.tsx}"
+
+[languages.javascript.languageServer]
+start = "typescript-language-server --stdio"
+
 [[ports]]
 localPort = 3000
 externalPort = 80
 
 [[ports]]
-localPort = 3001
+localPort = 3002
 externalPort = 3002
 
 [[ports]]
-localPort = 3002
-externalPort = 3003
-
-[[ports]]
-localPort = 39159
-externalPort = 3001
-
-[[ports]]
-localPort = 40945
+localPort = 42995
 externalPort = 3000
+
+[unitTest]
+language = "nodejs"
+
+[gitHubImport]
+requiredFiles = [".replit", "replit.nix", ".config", "package.json"]
