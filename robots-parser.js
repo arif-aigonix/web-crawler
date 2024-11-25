@@ -5,49 +5,63 @@ class RobotsParser {
     }
 
     parse(robotsTxt, baseUrl) {
+        if (!robotsTxt) return;
+
         let currentUserAgent = '*';
-        let currentRules = this.getDefaultRules();
-
         const lines = robotsTxt.split('\n');
+
         for (let line of lines) {
-            line = line.trim();
-            if (!line || line.startsWith('#')) continue;
+            try {
+                // Remove comments and trim whitespace
+                line = line.split('#')[0].trim().toLowerCase();
+                if (!line) continue;
 
-            const [field, ...values] = line.split(':').map(s => s.trim());
-            const value = values.join(':').trim();
+                const [field, ...valueParts] = line.split(':');
+                const value = valueParts.join(':').trim();
 
-            switch (field.toLowerCase()) {
-                case 'user-agent':
-                    if (currentRules.allow.length > 0 || currentRules.disallow.length > 0) {
-                        this.rules.set(currentUserAgent, currentRules);
-                        currentRules = this.getDefaultRules();
-                    }
-                    currentUserAgent = value.toLowerCase();
-                    break;
-                case 'allow':
-                    if (value) currentRules.allow.push(this.normalizePattern(value));
-                    break;
-                case 'disallow':
-                    if (value) currentRules.disallow.push(this.normalizePattern(value));
-                    break;
-                case 'crawl-delay':
-                    currentRules.crawlDelay = parseInt(value) || null;
-                    break;
-                case 'sitemap':
-                    if (value) {
-                        try {
-                            const sitemapUrl = new URL(value, baseUrl).toString();
-                            this.sitemaps.push(sitemapUrl);
-                        } catch (e) {
-                            console.error('Invalid sitemap URL:', value);
+                if (!value) continue;
+
+                switch (field.toLowerCase()) {
+                    case 'user-agent':
+                        currentUserAgent = value;
+                        if (!this.rules.has(currentUserAgent)) {
+                            this.rules.set(currentUserAgent, this.getDefaultRules());
                         }
-                    }
-                    break;
+                        break;
+
+                    case 'allow':
+                    case 'disallow':
+                        if (!this.rules.has(currentUserAgent)) {
+                            this.rules.set(currentUserAgent, this.getDefaultRules());
+                        }
+                        try {
+                            const pattern = value.startsWith('/') ? value : '/' + value;
+                            this.rules.get(currentUserAgent)[field].push(pattern);
+                        } catch (error) {
+                            console.warn(`Invalid ${field} pattern in robots.txt:`, value);
+                        }
+                        break;
+
+                    case 'crawl-delay':
+                        const delay = parseFloat(value);
+                        if (!isNaN(delay) && delay >= 0) {
+                            this.rules.get(currentUserAgent).crawlDelay = delay;
+                        }
+                        break;
+
+                    case 'sitemap':
+                        if (value.startsWith('http')) {
+                            this.sitemaps.push(value);
+                        } else if (baseUrl) {
+                            this.sitemaps.push(new URL(value, baseUrl).href);
+                        }
+                        break;
+                }
+            } catch (error) {
+                console.warn('Error parsing robots.txt line:', line, error);
+                continue;
             }
         }
-
-        // Save the last user-agent rules
-        this.rules.set(currentUserAgent, currentRules);
     }
 
     getDefaultRules() {
@@ -59,37 +73,62 @@ class RobotsParser {
     }
 
     normalizePattern(pattern) {
-        // Convert robots.txt pattern to regex
-        return new RegExp('^' + pattern
-            .replace(/\*/g, '.*')
-            .replace(/\?/g, '\\?')
-            .replace(/\./g, '\\.')
-            .replace(/\//g, '\\/'));
+        try {
+            // Escape special regex characters first
+            const escaped = pattern
+                .replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // Escape special regex chars
+                .replace(/\\\*/g, '.*')                  // Convert * back to .*
+                .replace(/\\\$/g, '$');                  // Convert $ back to end anchor
+
+            return new RegExp('^' + escaped);
+        } catch (error) {
+            console.warn('Invalid pattern in robots.txt:', pattern);
+            return new RegExp('^' + pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')); // Fallback to exact match
+        }
     }
 
     isAllowed(url, userAgent = '*') {
         try {
             const parsedUrl = new URL(url);
             const path = parsedUrl.pathname + parsedUrl.search;
+            
+            // Get rules for user agent, fallback to * if not found
+            const rules = this.rules.get(userAgent) || this.rules.get('*') || this.getDefaultRules();
+            
+            // If no rules, allow by default
+            if (!rules.allow.length && !rules.disallow.length) {
+                return true;
+            }
 
-            // Get rules for specific user agent or default to '*'
-            const rules = this.rules.get(userAgent.toLowerCase()) || 
-                         this.rules.get('*') || 
-                         this.getDefaultRules();
+            // Check allow rules first (they take precedence)
+            for (const pattern of rules.allow) {
+                try {
+                    const regex = this.normalizePattern(pattern);
+                    if (regex.test(path)) {
+                        return true;
+                    }
+                } catch (error) {
+                    console.warn('Invalid allow pattern:', pattern);
+                }
+            }
 
-            // Check if URL matches any allow pattern
-            const allowMatch = rules.allow.some(pattern => pattern.test(path));
-            if (allowMatch) return true;
+            // Then check disallow rules
+            for (const pattern of rules.disallow) {
+                try {
+                    const regex = this.normalizePattern(pattern);
+                    if (regex.test(path)) {
+                        return false;
+                    }
+                } catch (error) {
+                    console.warn('Invalid disallow pattern:', pattern);
+                }
+            }
 
-            // Check if URL matches any disallow pattern
-            const disallowMatch = rules.disallow.some(pattern => pattern.test(path));
-            if (disallowMatch) return false;
-
-            // If no patterns match, it's allowed
+            // If no patterns match, allow by default
             return true;
-        } catch (e) {
-            console.error('Error checking robots.txt rules:', e);
-            return false; // When in doubt, don't crawl
+        } catch (error) {
+            console.warn('Error checking robots.txt permissions:', error);
+            return true; // Allow by default in case of errors
         }
     }
 

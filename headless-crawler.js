@@ -176,8 +176,22 @@ class HeadlessCrawler {
                 })
             });
 
-            const data = await response.json();
-            
+            let data;
+            try {
+                data = await response.json();
+            } catch (error) {
+                // Handle HTML or non-JSON responses
+                this.results.stats.error++;
+                this.results.urls.push({
+                    url: normalizedUrl,
+                    sourceUrl,
+                    depth,
+                    status: 'error',
+                    error: 'Invalid response format'
+                });
+                return;
+            }
+
             if (data.status === 'error' || data.status === 'excluded') {
                 this.results.stats.error++;
                 this.results.urls.push({
@@ -230,9 +244,30 @@ class HeadlessCrawler {
 
     async crawl(startUrl) {
         try {
-            const urlObj = new URL(startUrl);
-            this.baseUrl = urlObj.origin;
-            this.baseDomain = urlObj.hostname;
+            // Validate URL format
+            try {
+                const urlObj = new URL(startUrl);
+                this.baseUrl = urlObj.origin;
+                this.baseDomain = urlObj.hostname;
+            } catch (error) {
+                return {
+                    urls: [{
+                        url: startUrl,
+                        depth: 0,
+                        sourceUrl: null,
+                        status: 'error',
+                        error: 'Invalid URL format'
+                    }],
+                    stats: {
+                        total: 1,
+                        accepted: 0,
+                        excluded: 0,
+                        external: 0,
+                        error: 1
+                    },
+                    byDepth: { 0: 0 }
+                };
+            }
 
             // Reset state
             this.urlMap.clear();
@@ -269,7 +304,62 @@ class HeadlessCrawler {
 
         } catch (error) {
             console.error('Crawl error:', error);
-            throw error;
+            return {
+                urls: [],
+                stats: {
+                    total: 1,
+                    accepted: 0,
+                    excluded: 0,
+                    external: 0,
+                    error: 1
+                },
+                byDepth: { 0: 0 }
+            };
+        }
+    }
+
+    async detectFramework(url) {
+        try {
+            // Validate URL format
+            try {
+                new URL(url);
+            } catch (error) {
+                return {
+                    frameworks: [],
+                    isDynamic: false,
+                    error: 'Invalid URL format'
+                };
+            }
+
+            const browser = await puppeteer.launch({
+                args: ['--no-sandbox', '--disable-setuid-sandbox']
+            });
+
+            const page = await browser.newPage();
+            await page.goto(url, { waitUntil: 'networkidle0' });
+
+            const result = await page.evaluate(() => {
+                const frameworks = [];
+                const isDynamic = !!window.history.pushState;
+
+                // Check for common frameworks
+                if (window.angular || document.querySelector('[ng-app]')) frameworks.push('Angular');
+                if (window.React || document.querySelector('[data-reactroot]')) frameworks.push('React');
+                if (window.Vue) frameworks.push('Vue.js');
+                if (window.jQuery) frameworks.push('jQuery');
+
+                return { frameworks, isDynamic };
+            });
+
+            await browser.close();
+            return result;
+
+        } catch (error) {
+            return {
+                frameworks: [],
+                isDynamic: false,
+                error: error.message
+            };
         }
     }
 }

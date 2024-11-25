@@ -586,7 +586,7 @@ class URLCrawler {
     async fetchPage(url) {
         try {
             console.log('Fetching URL:', url);
-            const response = await fetch('http://localhost:3000/fetch', {
+            const response = await fetch('http://localhost:3001/fetch', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -598,28 +598,20 @@ class URLCrawler {
                 })
             });
 
-            const data = await response.json();
-            console.log('Server response:', data);
-
-            if (data.status === 'error' || data.status === 'excluded') {
-                console.error(' Error fetching page:', data.error || data.reason);
-                return {
-                    success: false,
-                    error: data.error || data.reason
-                };
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
             }
 
-            return {
-                success: true,
-                html: data.html,
-                finalUrl: data.finalUrl
-            };
+            const data = await response.json();
+            if (!data.html) {
+                throw new Error('No HTML content received');
+            }
+
+            return data.html;
         } catch (error) {
             console.error('Network error:', error);
-            return {
-                success: false,
-                error: error.message
-            };
+            throw error;
         }
     }
 
@@ -767,21 +759,16 @@ class URLCrawler {
         }
 
         try {
-            const result = await this.fetchPage(normalizedUrl);
+            const html = await this.fetchPage(normalizedUrl);
             
-            if (!result.success) {
-                this.addUrlToStream(normalizedUrl, sourceUrl, depth, 'error', result.error);
-                return;
-            }
-
-            // Add to stream with success status
+            // Update statistics
             this.acceptedCount++;
             this.updateDepthStats(depth); // Only update depth stats for accepted URLs
             this.addUrlToStream(normalizedUrl, sourceUrl, depth, 'accepted');
             console.log('Successfully processed URL:', normalizedUrl);
 
             // Extract and process new URLs
-            const newUrls = await this.extractUrls(result.html, result.finalUrl || normalizedUrl);
+            const newUrls = await this.extractUrls(html, normalizedUrl);
             console.log('Total URLs found:', newUrls.length);
 
             // Filter and add valid URLs to queue

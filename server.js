@@ -4,10 +4,11 @@ const cors = require('cors');
 const path = require('path');
 const puppeteer = require('puppeteer');
 const RobotsParser = require('./robots-parser');
+const HeadlessCrawler = require('./headless-crawler');
 
 const app = express();
 const host = '0.0.0.0';
-const port = 3000;
+const port = process.env.PORT || 3001;
 
 // Enable trust proxy for Replit
 app.set('trust proxy', true);
@@ -19,6 +20,14 @@ const ROBOTS_CACHE_DURATION = 3600000; // 1 hour
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error('Server error:', err);
+    res.status(500).json({
+        error: err.message || 'Internal server error'
+    });
+});
 
 async function fetchRobotsTxt(domain) {
     try {
@@ -170,152 +179,30 @@ process.on('exit', async () => {
     }
 });
 
-app.post('/detect-framework', async (req, res) => {
-    const { url } = req.body;
-    if (!url) {
-        return res.status(400).json({
-            status: 'error',
-            error: 'URL is required'
-        });
-    }
-
-    try {
-        const result = await detectFramework(url);
-        res.json({
-            status: 'success',
-            ...result
-        });
-    } catch (error) {
-        res.json({
-            status: 'error',
-            error: error.message
-        });
-    }
-});
-
-app.post('/fetch', async (req, res) => {
-    const { url, respectRobots, usePuppeteer } = req.body;
-    console.log('Fetch request:', { url, respectRobots, usePuppeteer });
-
-    let page = null;
-    try {
-        // Check robots.txt if enabled
-        if (respectRobots) {
-            const robotsUrl = new URL('/robots.txt', url).toString();
-            console.log('Checking robots.txt:', robotsUrl);
-            
-            try {
-                const robotsRes = await fetch(robotsUrl);
-                if (robotsRes.ok) {
-                    const robotsTxt = await robotsRes.text();
-                    const parser = new RobotsParser();
-                    parser.parse(robotsTxt, new URL(url).origin);
-                    if (!parser.isAllowed(url, userAgent)) {
-                        console.log('URL disallowed by robots.txt:', url);
-                        return res.json({
-                            status: 'excluded',
-                            reason: 'Disallowed by robots.txt'
-                        });
-                    }
-                }
-            } catch (error) {
-                console.log('Error fetching robots.txt:', error.message);
-            }
-        }
-
-        if (usePuppeteer) {
-            // Reuse browser instance
-            browser = await getBrowser();
-
-            // Create a new page
-            page = await browser.newPage();
-            
-            // Block unnecessary resources
-            await page.setRequestInterception(true);
-            page.on('request', (request) => {
-                const resourceType = request.resourceType();
-                // Only allow HTML and necessary scripts
-                if (['document', 'script', 'xhr', 'fetch'].includes(resourceType)) {
-                    request.continue();
-                } else {
-                    request.abort();
-                }
-            });
-
-            // Configure page
-            await page.setViewport({ width: 1280, height: 800 });
-            await page.setUserAgent(userAgent);
-            
-            // Set shorter timeouts
-            page.setDefaultNavigationTimeout(15000);
-            page.setDefaultTimeout(15000);
-
-            // Navigate to URL with optimized settings
-            await page.goto(url, {
-                waitUntil: 'networkidle0',
-                timeout: 15000
-            });
-
-            // Get the rendered HTML
-            const content = await page.content();
-            const finalUrl = page.url();
-
-            res.json({
-                status: 'success',
-                html: content,
-                finalUrl: finalUrl
-            });
-        } else {
-            // Regular fetch mode
-            const response = await fetch(url, {
-                headers: {
-                    'User-Agent': userAgent,
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                }
-            });
-
-            const content = await response.text();
-            res.json({
-                status: 'success',
-                html: content,
-                finalUrl: response.url
-            });
-        }
-    } catch (error) {
-        console.error('Server error:', error);
-        res.json({
-            status: 'error',
-            error: error.message || 'Failed to fetch URL'
-        });
-    } finally {
-        if (page) {
-            await page.close();
-        }
-    }
-});
-
-// API endpoint for headless crawling
+// API Routes
 app.post('/api/crawl', async (req, res) => {
-    const { url, maxDepth, exclusionRules } = req.body;
-
-    if (!url) {
-        return res.status(400).json({
-            status: 'error',
-            error: 'URL is required'
-        });
-    }
-
     try {
-        const HeadlessCrawler = require('./headless-crawler');
-        const crawler = new HeadlessCrawler(maxDepth || Infinity, exclusionRules || []);
-        const results = await crawler.crawl(url);
+        const { url, depth, useHeadless } = req.body;
+        if (!url) {
+            return res.status(400).json({ error: 'URL is required' });
+        }
+
+        try {
+            new URL(url);
+        } catch (error) {
+            return res.status(400).json({ error: 'Invalid URL format' });
+        }
+
+        const crawler = new HeadlessCrawler();
+        const results = await crawler.crawl(url, depth);
+        
         res.json({
             status: 'success',
-            results
+            urls: results.urls,
+            stats: results.stats,
+            byDepth: results.byDepth
         });
     } catch (error) {
-        console.error('API crawl error:', error);
         res.status(500).json({
             status: 'error',
             error: error.message || 'Crawl failed'
@@ -323,6 +210,130 @@ app.post('/api/crawl', async (req, res) => {
     }
 });
 
-app.listen(port, '0.0.0.0', () => {
-  console.log(`Server running on http://0.0.0.0:${port}`);
+app.get('/api/check-robots', async (req, res) => {
+    try {
+        const { url } = req.query;
+        if (!url) {
+            return res.status(400).json({ error: 'URL is required' });
+        }
+
+        try {
+            const urlObj = new URL(url);
+            const robotsParser = await getRobotsParser(urlObj.origin);
+            const allowed = robotsParser ? robotsParser.isAllowed(url) : true;
+
+            res.json({ allowed });
+        } catch (error) {
+            res.status(400).json({ error: 'Invalid URL format' });
+        }
+    } catch (error) {
+        res.status(500).json({
+            error: error.message || 'Failed to check robots.txt'
+        });
+    }
 });
+
+app.post('/api/detect-framework', async (req, res) => {
+    try {
+        const { url } = req.body;
+        if (!url) {
+            return res.status(400).json({ error: 'URL is required' });
+        }
+
+        try {
+            new URL(url);
+        } catch (error) {
+            return res.status(400).json({ error: 'Invalid URL format' });
+        }
+
+        const crawler = new HeadlessCrawler();
+        const result = await crawler.detectFramework(url);
+        
+        // Always return 200 with framework detection results
+        res.json({
+            frameworks: result.frameworks || [],
+            isDynamic: result.isDynamic || false,
+            ...(result.error && { error: result.error })
+        });
+    } catch (error) {
+        res.status(500).json({
+            error: error.message || 'Failed to detect framework'
+        });
+    }
+});
+
+// Add the /fetch endpoint
+app.post('/fetch', async (req, res) => {
+    try {
+        const { url, respectRobots, usePuppeteer } = req.body;
+        
+        if (!url) {
+            return res.status(400).json({ error: 'URL is required' });
+        }
+
+        // Check robots.txt if requested
+        if (respectRobots) {
+            try {
+                const urlObj = new URL(url);
+                const robotsParser = await getRobotsParser(urlObj.origin);
+                if (robotsParser && !robotsParser.isAllowed(url)) {
+                    return res.status(403).json({ 
+                        error: 'Access denied by robots.txt',
+                        html: null 
+                    });
+                }
+            } catch (error) {
+                console.error('Error checking robots.txt:', error);
+            }
+        }
+
+        if (usePuppeteer) {
+            const browser = await getBrowser();
+            const page = await browser.newPage();
+            try {
+                await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
+                const html = await page.content();
+                res.json({ html });
+            } catch (error) {
+                res.status(500).json({ 
+                    error: `Failed to fetch page: ${error.message}`,
+                    html: null 
+                });
+            } finally {
+                await page.close();
+            }
+        } else {
+            const response = await fetch(url, {
+                headers: {
+                    'User-Agent': userAgent
+                }
+            });
+            const html = await response.text();
+            res.json({ html });
+        }
+    } catch (error) {
+        res.status(500).json({ 
+            error: `Failed to fetch page: ${error.message}`,
+            html: null 
+        });
+    }
+});
+
+// Only start the server if not being required by another module (e.g. tests)
+if (require.main === module) {
+    const server = app.listen(port, host, () => {
+        console.log(`Server running on http://${host}:${port}`);
+    }).on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            console.error(`Port ${port} is already in use. Trying port ${port + 1}`);
+            server.close();
+            app.listen(port + 1, host, () => {
+                console.log(`Server running on http://${host}:${port + 1}`);
+            });
+        } else {
+            console.error('Server error:', err);
+        }
+    });
+}
+
+module.exports = app;
