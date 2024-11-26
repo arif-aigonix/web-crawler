@@ -2,20 +2,6 @@
 
 A web crawler with dynamic content support, capable of crawling JavaScript-rendered pages.
 
-## Development Workflow
-
-1. Make changes locally using your preferred editor
-2. Commit and push changes to GitHub:
-   ```bash
-   git add .
-   git commit -m "Description of changes"
-   git push
-   ```
-3. In Replit:
-   - Click the "Version Control" icon in the sidebar
-   - Click "Pull" to get the latest changes
-   - The project will automatically reload with your changes
-
 ## Features
 
 - Regular and dynamic content crawling
@@ -23,3 +9,26 @@ A web crawler with dynamic content support, capable of crawling JavaScript-rende
 - Configurable depth and exclusion rules
 - Real-time crawl statistics
 - Export functionality
+
+## Windsurf Quick Reference
+
+### Common Commands
+- Start server: `npm start`
+- Run all tests: `npm test`
+- Run specific test: `npm test -- path/to/test.js`
+
+### Key Files
+- `server.js`: Main server implementation
+- `headless-crawler.js`: Core crawler functionality
+- `__tests__/`: Test files
+
+### Troubleshooting
+- For ES module errors: Check `--experimental-vm-modules` flag in package.json
+- For fetch issues: Verify node-fetch import syntax
+- For test failures: Ensure all dependencies are installed
+
+## Code Style Guidelines
+
+- All code, comments, and documentation must be written in English
+- This applies regardless of the communication language used in issues or discussions
+- Variable names, function names, and comments should be clear and descriptive in English
