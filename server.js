@@ -1,5 +1,10 @@
 const express = require('express');
-const fetch = require('node-fetch');
+// We'll use dynamic import for fetch
+let fetch;
+(async () => {
+  const { default: _fetch } = await import('node-fetch');
+  fetch = _fetch;
+})();
 const cors = require('cors');
 const path = require('path');
 const puppeteer = require('puppeteer');
@@ -79,7 +84,7 @@ function isAllowedByRobots(robotsTxt, url) {
     return parser.isAllowed(url);
 }
 
-const userAgent = 'Mozilla/5.0 (compatible; CascadeCrawler/1.0; +https://e15f155f-c77a-4443-963a-5f5225dc327c-00-gmrpj3dapkv4.picard.replit.dev)';
+const userAgent = 'Mozilla/5.0 (compatible; CascadeCrawler/1.0)';
 
 async function detectFramework(url) {
     try {
