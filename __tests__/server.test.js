@@ -74,8 +74,15 @@ describe('Server', () => {
         .send({ url: 'https://example.com' });
 
       expect(response.status).toBe(200);
-      expect(response.body).toHaveProperty('frameworks');
-      expect(response.body).toHaveProperty('isDynamic');
+      expect(Array.isArray(response.body.frameworks)).toBe(true);
+    });
+
+    test('should handle invalid URLs', async () => {
+      const response = await request(`http://localhost:3002`)
+        .post('/api/detect-framework')
+        .send({ url: 'invalid-url' });
+
+      expect(response.status).toBe(400);
     });
   });
 

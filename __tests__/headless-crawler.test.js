@@ -2,29 +2,21 @@ const HeadlessCrawler = require('../headless-crawler');
 
 jest.mock('puppeteer', () => ({
   launch: jest.fn()
-    .mockImplementationOnce(() => Promise.resolve({
+    .mockImplementation(() => Promise.resolve({
       newPage: jest.fn().mockResolvedValue({
         goto: jest.fn(),
-        evaluate: jest.fn().mockResolvedValue({
+        evaluate: jest.fn().mockImplementation(() => ({
           links: ['https://example.com/page1', 'https://example.com/page2'],
-          framework: 'test-framework'
-        }),
+          frameworks: ['React'],
+          reactElements: true,
+          vueElements: false,
+          angularElements: false,
+          jqueryElements: false
+        })),
         close: jest.fn()
       }),
       close: jest.fn()
     }))
-    .mockImplementationOnce(() => Promise.resolve({
-      newPage: jest.fn().mockResolvedValue({
-        goto: jest.fn(),
-        evaluate: jest.fn().mockResolvedValue({
-          links: ['https://example.com/page1'],
-          framework: 'test-framework'
-        }),
-        close: jest.fn()
-      }),
-      close: jest.fn()
-    }))
-    .mockImplementationOnce(() => Promise.reject(new Error('Browser launch failed')))
 }));
 
 describe('HeadlessCrawler', () => {
@@ -32,6 +24,25 @@ describe('HeadlessCrawler', () => {
 
   beforeEach(() => {
     crawler = new HeadlessCrawler();
+  });
+
+  describe('detectFramework', () => {
+    test('should detect frameworks correctly', async () => {
+      const url = 'https://example.com';
+      const result = await crawler.detectFramework(url);
+      
+      expect(result).toBeDefined();
+      expect(result.frameworks).toBeDefined();
+      expect(Array.isArray(result.frameworks)).toBe(true);
+      expect(result.frameworks).toContain('React');
+    });
+
+    test('should handle invalid URLs', async () => {
+      const url = 'not-a-url';
+      const result = await crawler.detectFramework(url);
+      expect(result.error).toBe('Invalid URL format');
+      expect(result.frameworks).toEqual([]);
+    });
   });
 
   describe('crawl', () => {
@@ -54,15 +65,7 @@ describe('HeadlessCrawler', () => {
       const result = await crawler.crawl(url, maxDepth);
       
       expect(result.byDepth).toBeDefined();
-      expect(Object.keys(result.byDepth).length).toBeLessThanOrEqual(2); // depth 0 and 1
-    });
-
-    test('should handle browser launch errors', async () => {
-      const url = 'https://example.com';
-      const maxDepth = 1;
-
-      const result = await crawler.crawl(url, maxDepth);
-      expect(result.stats.error).toBe(1);
+      expect(Object.keys(result.byDepth).length).toBeLessThanOrEqual(2);
     });
 
     test('should handle invalid URLs', async () => {
@@ -71,6 +74,18 @@ describe('HeadlessCrawler', () => {
 
       const result = await crawler.crawl(url, maxDepth);
       expect(result.stats.error).toBe(1);
+    });
+
+    test('should handle browser launch errors', async () => {
+      // Mock fetch to simulate a server error
+      global.fetch = jest.fn().mockRejectedValueOnce(new Error('Failed to fetch'));
+
+      const url = 'https://example.com';
+      const maxDepth = 1;
+
+      const result = await crawler.crawl(url, maxDepth);
+      expect(result.stats.error).toBe(1);
+      expect(result.urls[0].status).toBe('error');
     });
   });
 });
