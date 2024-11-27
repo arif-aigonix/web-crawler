@@ -1,20 +1,35 @@
 const request = require('supertest');
 const express = require('express');
 const path = require('path');
-const app = require('../server');
+const app = require('../../server.js');
+
+// Mock puppeteer
+jest.mock('puppeteer', () => ({
+  launch: jest.fn().mockResolvedValue({
+    newPage: jest.fn().mockResolvedValue({
+      goto: jest.fn(),
+      evaluate: jest.fn().mockResolvedValue({
+        frameworks: ['React'],
+        isDynamic: true
+      }),
+      close: jest.fn()
+    }),
+    close: jest.fn()
+  })
+}));
 
 // Use a different port for testing
 let server;
 
 describe('Server', () => {
-  beforeAll(() => {
-    server = app.listen(3002, () => {
-      console.log('Test server running on port 3002');
-    });
+  beforeAll(async () => {
+    server = app.listen(3002);
+    await new Promise((resolve) => server.once('listening', resolve));
+    console.log('Test server running on port 3002');
   });
 
-  afterAll((done) => {
-    server.close(done);
+  afterAll(async () => {
+    await new Promise((resolve) => server.close(resolve));
   });
 
   describe('GET /', () => {

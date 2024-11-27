@@ -1,4 +1,4 @@
-const RobotsParser = require('../robots-parser');
+const RobotsParser = require('../../robots-parser.js');
 
 describe('RobotsParser', () => {
   let parser;

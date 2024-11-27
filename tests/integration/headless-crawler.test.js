@@ -1,22 +1,22 @@
-const HeadlessCrawler = require('../headless-crawler');
+const HeadlessCrawler = require('../../headless-crawler.js');
 
+// Mock puppeteer
 jest.mock('puppeteer', () => ({
-  launch: jest.fn()
-    .mockImplementation(() => Promise.resolve({
-      newPage: jest.fn().mockResolvedValue({
-        goto: jest.fn(),
-        evaluate: jest.fn().mockImplementation(() => ({
-          links: ['https://example.com/page1', 'https://example.com/page2'],
-          frameworks: ['React'],
-          reactElements: true,
-          vueElements: false,
-          angularElements: false,
-          jqueryElements: false
-        })),
-        close: jest.fn()
-      }),
+  launch: jest.fn().mockImplementation(() => Promise.resolve({
+    newPage: jest.fn().mockResolvedValue({
+      goto: jest.fn(),
+      evaluate: jest.fn().mockImplementation(() => ({
+        links: ['https://example.com/page1', 'https://example.com/page2'],
+        frameworks: ['React'],
+        reactElements: true,
+        vueElements: false,
+        angularElements: false,
+        jqueryElements: false
+      })),
       close: jest.fn()
-    }))
+    }),
+    close: jest.fn()
+  }))
 }));
 
 describe('HeadlessCrawler', () => {

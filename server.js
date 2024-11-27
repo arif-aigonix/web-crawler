@@ -265,11 +265,13 @@ app.post('/api/detect-framework', async (req, res) => {
         const crawler = new HeadlessCrawler();
         const result = await crawler.detectFramework(url);
         
-        // Always return 200 with framework detection results
+        if (result.error) {
+            return res.status(500).json({ error: result.error });
+        }
+
         res.json({
             frameworks: result.frameworks || [],
-            isDynamic: result.isDynamic || false,
-            ...(result.error && { error: result.error })
+            isDynamic: result.isDynamic || false
         });
     } catch (error) {
         res.status(500).json({

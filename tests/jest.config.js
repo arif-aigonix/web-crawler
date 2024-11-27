@@ -1,6 +1,6 @@
 module.exports = {
   testEnvironment: 'node',
-  testMatch: ['**/__tests__/**/*.test.js'],
+  testMatch: ['**/__tests__/**/*.test.js', '**/tests/**/*.test.js'],
   collectCoverageFrom: [
     '*.js',
     '!jest.config.js',
@@ -15,10 +15,11 @@ module.exports = {
       statements: 80
     }
   },
-  setupFiles: [],
+  setupFiles: ['./jest.setup.js'],
   testEnvironmentOptions: {
     url: 'http://localhost'
   },
-  transform: {},
-  verbose: true
+  transform: {
+    '^.+\\.js$': 'babel-jest'
+  }
 };
