@@ -1,10 +1,11 @@
-const request = require('supertest');
-const express = require('express');
-const path = require('path');
-const app = require('../../server.js');
+import { jest } from '@jest/globals';
+import request from 'supertest';
+import express from 'express';
+import path from 'path';
+import { app } from '../../server.js';
 
-// Mock puppeteer
-jest.mock('puppeteer', () => ({
+// Mock puppeteer-core
+jest.mock('puppeteer-core', () => ({
   launch: jest.fn().mockResolvedValue({
     newPage: jest.fn().mockResolvedValue({
       goto: jest.fn(),
@@ -125,8 +126,9 @@ describe('Server', () => {
           usePuppeteer: false
         });
 
-      expect(response.status).toBe(500);
+      expect(response.status).toBe(400);
       expect(response.body).toHaveProperty('error');
+      expect(response.body.error).toBe('Invalid URL format');
     });
   });
 });

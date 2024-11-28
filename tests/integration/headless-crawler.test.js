@@ -1,8 +1,9 @@
-const HeadlessCrawler = require('../../headless-crawler.js');
+import { jest } from '@jest/globals';
+import { HeadlessCrawler } from '../../headless-crawler.js';
 
-// Mock puppeteer
-jest.mock('puppeteer', () => ({
-  launch: jest.fn().mockImplementation(() => Promise.resolve({
+// Mock puppeteer-core
+jest.mock('puppeteer-core', () => ({
+  launch: jest.fn().mockResolvedValue({
     newPage: jest.fn().mockResolvedValue({
       goto: jest.fn(),
       evaluate: jest.fn().mockImplementation(() => ({

@@ -140,4 +140,4 @@ class RobotsParser {
     }
 }
 
-module.exports = RobotsParser;
+export { RobotsParser };

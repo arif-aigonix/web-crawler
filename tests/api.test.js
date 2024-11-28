@@ -1,8 +1,8 @@
 const request = require('supertest');
 const app = require('../server.js');
 
-// Mock puppeteer
-jest.mock('puppeteer', () => {
+// Mock puppeteer-core
+jest.mock('puppeteer-core', () => {
   const mockPage = {
     goto: jest.fn(),
     content: jest.fn(),
@@ -38,7 +38,7 @@ describe('Framework Detection API', () => {
     await new Promise((resolve) => server.once('listening', resolve));
     const address = server.address();
     baseUrl = `http://localhost:${address.port}`;
-    puppeteer = require('puppeteer');
+    puppeteer = require('puppeteer-core');
   });
 
   afterAll(async () => {
@@ -65,14 +65,28 @@ describe('Framework Detection API', () => {
       expect(response.body.frameworks).toContain('React');
     }, 60000);
 
-    it('should handle invalid URLs', async () => {
-      const response = await request(baseUrl)
-        .post('/api/detect-framework')
-        .send({ url: 'invalid-url' });
+    it('should handle invalid URL formats', async () => {
+      const response = await request(app)
+        .post('/fetch')
+        .send({
+          url: 'invalid-url',
+          usePuppeteer: false
+        });
 
       expect(response.status).toBe(400);
-      expect(response.body).toHaveProperty('error');
       expect(response.body.error).toBe('Invalid URL format');
+    });
+
+    it('should handle invalid URL protocols', async () => {
+      const response = await request(app)
+        .post('/fetch')
+        .send({
+          url: 'ftp://example.com',
+          usePuppeteer: false
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('Invalid URL format: only HTTP and HTTPS protocols are supported');
     });
 
     it('should handle missing URL parameter', async () => {
@@ -83,6 +97,28 @@ describe('Framework Detection API', () => {
       expect(response.status).toBe(400);
       expect(response.body).toHaveProperty('error');
       expect(response.body.error).toBe('URL is required');
+    });
+
+    it('should handle missing Chrome path when using Puppeteer', async () => {
+      const oldChromePath = process.env.CHROME_PATH;
+      const oldPuppeteerPath = process.env.PUPPETEER_EXECUTABLE_PATH;
+      
+      process.env.CHROME_PATH = '';
+      process.env.PUPPETEER_EXECUTABLE_PATH = '';
+
+      const response = await request(app)
+        .post('/fetch')
+        .send({
+          url: 'https://example.com',
+          usePuppeteer: true
+        });
+
+      // Restore environment variables
+      process.env.CHROME_PATH = oldChromePath;
+      process.env.PUPPETEER_EXECUTABLE_PATH = oldPuppeteerPath;
+
+      expect(response.status).toBe(500);
+      expect(response.body.error).toContain('Failed to fetch page with Puppeteer');
     });
   });
 

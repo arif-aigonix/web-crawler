@@ -2,51 +2,13 @@
  * @jest-environment jsdom
  */
 
+import { jest } from '@jest/globals';
+import { URLCrawler } from '../../crawler.js';
+
 // Mock the window object and required browser APIs
 global.window = {
   addEventListener: jest.fn()
 };
-
-// Create a mock class that matches the actual implementation
-class URLCrawler {
-  constructor() {
-    this.urlMap = new Map();
-    this.queue = [];
-    this.processing = false;
-    this.maxDepth = 1;
-    this.exclusionRules = [];
-    this.baseUrl = '';
-    this.baseDomain = '';
-    this.processedCount = 0;
-    this.acceptedCount = 0;
-    this.totalFound = 0;
-    this.depthStats = new Map();
-    this.streamBuffer = [];
-    this.maxStreamItems = 1000;
-  }
-
-  addToQueue(url, depth) {
-    if (depth > this.maxDepth) return;
-    if (this.urlMap.has(url)) return;
-    if (this.exclusionRules.some(rule => rule.test(url))) return;
-    if (this.baseDomain && !url.includes(this.baseDomain)) return;
-
-    this.queue.push({ url, depth });
-    this.urlMap.set(url, { depth });
-  }
-
-  updateDepthStats(depth) {
-    const count = this.depthStats.get(depth) || 0;
-    this.depthStats.set(depth, count + 1);
-  }
-
-  addUrlToStream(url, depth) {
-    if (this.streamBuffer.length >= this.maxStreamItems) {
-      this.streamBuffer.shift();
-    }
-    this.streamBuffer.push({ url, depth });
-  }
-}
 
 describe('URLCrawler', () => {
   let crawler;
