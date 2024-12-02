@@ -885,27 +885,34 @@ class URLCrawler {
     }
 
     async processQueue() {
-        if (!this.processing) {
-            console.log("Crawling stopped");
+        if (!this.processing || this.queue.length === 0) {
             this.stop();
             return;
         }
 
-        while (this.processing && this.queue.length > 0) {
-            try {
-                const { url, sourceUrl, depth } = this.queue.shift();
-                await this.processUrl(url, sourceUrl, depth);
-
-                // Add a small delay between requests to be polite
-                await new Promise((resolve) => setTimeout(resolve, 100));
-            } catch (error) {
-                console.error("Error processing URL:", error);
-                // Continue processing despite errors
-            }
+        // Check if any URLs in the queue are within max depth
+        const hasValidDepthUrls = this.queue.some(
+            (item) => item.depth <= this.maxDepth,
+        );
+        if (!hasValidDepthUrls) {
+            console.log("No more URLs within max depth limit. Stopping crawler.");
+            this.stop();
+            return;
         }
 
-        if (this.queue.length === 0) {
-            console.log("Queue empty, crawling finished");
+        const { url, sourceUrl, depth } = this.queue.shift();
+
+        try {
+            await this.processUrl(url, sourceUrl, depth);
+        } catch (error) {
+            console.error(`Error processing ${url}:`, error);
+            this.addUrlToStream(url, sourceUrl, depth, "error", error.message);
+        }
+
+        // Continue processing
+        if (this.processing) {
+            setTimeout(() => this.processQueue(), 100);
+        } else {
             this.stop();
         }
     }
@@ -1216,3 +1223,5 @@ document.addEventListener("DOMContentLoaded", () => {
     const crawler = new URLCrawler();
     crawler.setupEventListeners();
 });
+
+export { URLCrawler };

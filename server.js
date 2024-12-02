@@ -1,15 +1,14 @@
-const express = require('express');
-// We'll use dynamic import for fetch
-let fetch;
-(async () => {
-  const { default: _fetch } = await import('node-fetch');
-  fetch = _fetch;
-})();
-const cors = require('cors');
-const path = require('path');
-const puppeteer = require('puppeteer');
-const RobotsParser = require('./robots-parser');
-const HeadlessCrawler = require('./headless-crawler');
+import express from 'express';
+import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import puppeteer from 'puppeteer-core';
+import { execSync } from 'child_process';
+import { RobotsParser } from './robots-parser.js';
+import { HeadlessCrawler } from './headless-crawler.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const host = '0.0.0.0';
@@ -165,34 +164,110 @@ let browser = null;
 async function getBrowser() {
     if (!browser) {
         try {
+            const chromePath = process.env.CHROME_PATH || process.env.PUPPETEER_EXECUTABLE_PATH || 'chromium-browser';
+            
+            // Check if Chrome is accessible
+            try {
+                execSync(`${chromePath} --version`, { stdio: 'ignore' });
+            } catch (error) {
+                console.error(`Chrome not found at ${chromePath}. Please ensure Chrome/Chromium is installed.`);
+                return null;
+            }
+
             browser = await puppeteer.launch({
-                headless: 'new',
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
                     '--disable-dev-shm-usage',
                     '--disable-accelerated-2d-canvas',
                     '--disable-gpu',
-                    '--no-first-run',
-                    '--no-zygote',
-                    '--single-process'
+                    '--window-size=1920,1080'
                 ],
-                executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null,
-                ignoreDefaultArgs: ['--disable-extensions']
+                executablePath: chromePath,
+                ignoreDefaultArgs: ['--disable-extensions'],
+                defaultViewport: {
+                    width: 1920,
+                    height: 1080
+                },
+                headless: 'new' // Required for Puppeteer 23+
+            });
+
+            // Handle browser disconnection
+            browser.on('disconnected', () => {
+                console.log('Browser disconnected. Will create new instance on next request.');
+                browser = null;
+            });
+
+            // Handle process termination
+            ['SIGINT', 'SIGTERM'].forEach(signal => {
+                process.on(signal, async () => {
+                    if (browser) {
+                        await browser.close();
+                        browser = null;
+                    }
+                    process.exit();
+                });
             });
         } catch (error) {
             console.error('Failed to launch browser:', error);
-            throw error;
+            return null;
         }
     }
     return browser;
 }
 
-// Cleanup browser on process exit
-process.on('exit', async () => {
+// Maximum retries for page load
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000; // 1 second
+
+// Function to setup page with optimal settings
+async function setupPage(page) {
+    // Set viewport and user agent
+    await page.setUserAgent(userAgent);
+    
+    // Enable JavaScript
+    await page.setJavaScriptEnabled(true);
+    
+    // We don't need request interception if the client is fast
+    // Just add error logging
+    page.on('console', (msg) => {
+        if (msg.type() === 'error') {
+            console.error('Page Error:', msg.text());
+        }
+    });
+
+    page.on('error', (err) => {
+        console.error('Page crashed:', err);
+    });
+
+    page.on('pageerror', (err) => {
+        console.error('Page error:', err);
+    });
+}
+
+// Ensure cleanup of browser on app shutdown
+async function cleanup() {
     if (browser) {
-        await browser.close();
+        try {
+            await browser.close();
+        } catch (error) {
+            console.error('Error closing browser:', error);
+        }
+        browser = null;
     }
+}
+
+process.on('beforeExit', cleanup);
+process.on('exit', cleanup);
+process.on('SIGINT', () => {
+    cleanup().then(() => process.exit());
+});
+process.on('SIGTERM', () => {
+    cleanup().then(() => process.exit());
+});
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught exception:', error);
+    cleanup().then(() => process.exit(1));
 });
 
 // API Routes
@@ -280,13 +355,22 @@ app.post('/api/detect-framework', async (req, res) => {
     }
 });
 
-// Add the /fetch endpoint
 app.post('/fetch', async (req, res) => {
     try {
         const { url, respectRobots, usePuppeteer } = req.body;
         
         if (!url) {
             return res.status(400).json({ error: 'URL is required' });
+        }
+
+        // Validate URL format
+        try {
+            const urlObj = new URL(url);
+            if (!['http:', 'https:'].includes(urlObj.protocol)) {
+                return res.status(400).json({ error: 'Invalid URL format: only HTTP and HTTPS protocols are supported' });
+            }
+        } catch (error) {
+            return res.status(400).json({ error: 'Invalid URL format' });
         }
 
         // Check robots.txt if requested
@@ -302,83 +386,139 @@ app.post('/fetch', async (req, res) => {
                 }
             } catch (error) {
                 console.error('Error checking robots.txt:', error);
+                // Continue even if robots.txt check fails
             }
         }
 
         if (usePuppeteer) {
-            const browser = await getBrowser();
-            const page = await browser.newPage();
-            try {
-                // Set viewport and user agent
-                await page.setViewport({ width: 1920, height: 1080 });
-                await page.setUserAgent(userAgent);
+            let retryCount = 0;
+            while (retryCount < MAX_RETRIES) {
+                try {
+                    const browser = await getBrowser();
+                    if (!browser) {
+                        throw new Error('Failed to initialize browser');
+                    }
+                    
+                    const page = await browser.newPage();
+                    await setupPage(page);
+                    
+                    // Set timeout for the entire operation
+                    const pagePromise = (async () => {
+                        try {
+                            // Navigate with timeout and error handling
+                            const response = await page.goto(url, { 
+                                waitUntil: ['networkidle0', 'domcontentloaded'],
+                                timeout: 30000 
+                            });
 
-                // Enable JavaScript and wait for network to be idle
-                await page.setJavaScriptEnabled(true);
-                await page.goto(url, { 
-                    waitUntil: ['networkidle0', 'domcontentloaded', 'load'],
-                    timeout: 30000 
-                });
+                            // Add detailed logging
+                            console.log(`Page response: status=${response.status}, statusText=${response.statusText}`);
 
-                // Replace waitForTimeout with setTimeout wrapped in Promise
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                            // Consider both 2xx and 304 as successful responses
+                            // Note: response.ok is true for status codes 200-299
+                            if (response.status !== 304 && !response.ok) {
+                                console.error(`Failed response: status=${response.status}, statusText=${response.statusText}`);
+                                throw new Error(`Failed to load page: ${response.status} ${response.statusText}`);
+                            }
 
-                // Get the final URL after any redirects
-                const finalUrl = page.url();
+                            // For 304 responses, we still want to get the cached content
+                            const html = await page.content();
+                            console.log(`Retrieved HTML content length: ${html.length}`);
 
-                // Get the rendered HTML
-                const html = await page.content();
+                            // Get the final URL after any redirects
+                            const finalUrl = page.url();
+                            console.log(`Final URL after redirects: ${finalUrl}`);
 
-                res.json({ 
-                    html,
-                    finalUrl,
-                    dynamicContent: true
-                });
-            } catch (error) {
-                res.status(500).json({ 
-                    error: `Failed to fetch page: ${error.message}`,
-                    html: null 
-                });
-            } finally {
-                await page.close();
-            }
-        } else {
-            // Handle non-Puppeteer fetch here
-            const response = await fetch(url, {
-                headers: {
-                    'User-Agent': userAgent
+                            return { html, finalUrl };
+                        } finally {
+                            await page.close();
+                        }
+                    })();
+
+                    // Set overall timeout
+                    const timeoutPromise = new Promise((_, reject) => {
+                        setTimeout(() => reject(new Error('Operation timed out')), 45000);
+                    });
+
+                    const { html, finalUrl } = await Promise.race([pagePromise, timeoutPromise]);
+
+                    return res.json({ 
+                        html,
+                        finalUrl,
+                        dynamicContent: true
+                    });
+                } catch (error) {
+                    console.error(`Puppeteer error (attempt ${retryCount + 1}/${MAX_RETRIES}):`, error);
+                    retryCount++;
+                    
+                    // Don't retry on certain errors
+                    if (error.message.includes('net::ERR_ABORTED') || 
+                        error.message.includes('net::ERR_BLOCKED_BY_CLIENT')) {
+                        console.log('Not retrying due to client-side abort or blocking');
+                        return res.status(400).json({ 
+                            error: `Page load blocked or aborted: ${error.message}`,
+                            html: null 
+                        });
+                    }
+                    
+                    if (retryCount === MAX_RETRIES) {
+                        return res.status(500).json({ 
+                            error: `Failed to fetch page with Puppeteer after ${MAX_RETRIES} attempts: ${error.message}`,
+                            html: null 
+                        });
+                    }
+                    
+                    // Exponential backoff for retries
+                    const delay = RETRY_DELAY * Math.pow(2, retryCount - 1);
+                    console.log(`Waiting ${delay}ms before retry ${retryCount}/${MAX_RETRIES}`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
                 }
+            }
+        }
+
+        // Non-Puppeteer fetch
+        try {
+            const response = await fetch(url, {
+                headers: { 'User-Agent': userAgent }
             });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
             const html = await response.text();
-            res.json({ 
+            return res.json({ 
                 html,
                 finalUrl: response.url,
                 dynamicContent: false
             });
+        } catch (error) {
+            console.error('Fetch error:', error);
+            return res.status(500).json({ 
+                error: `Failed to fetch page: ${error.message}`,
+                html: null 
+            });
         }
     } catch (error) {
-        res.status(500).json({ 
-            error: error.message || 'Failed to fetch page',
+        console.error('Server error:', error);
+        return res.status(500).json({ 
+            error: `Server error: ${error.message}`,
             html: null 
         });
     }
 });
 
-// Only start the server if not being required by another module (e.g. tests)
-if (require.main === module) {
-    const server = app.listen(port, host, () => {
+// Only start the server if this file is run directly
+if (import.meta.url === `file://${__filename}`) {
+    app.listen(port, host, () => {
         console.log(`Server running on port ${port}`);
     }).on('error', (err) => {
         if (err.code === 'EADDRINUSE') {
-            console.error(`Port ${port} is already in use. Trying port ${port + 1}`);
-            server.close();
-            app.listen(port + 1, host, () => {
-                console.log(`Server running on port ${port + 1}`);
-            });
+            console.error(`Port ${port} is already in use`);
         } else {
             console.error('Server error:', err);
         }
     });
 }
 
-module.exports = app;
+export { app };

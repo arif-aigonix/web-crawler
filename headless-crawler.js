@@ -1,3 +1,6 @@
+import puppeteer from 'puppeteer-core';
+import { JSDOM } from 'jsdom';
+
 class HeadlessCrawler {
     constructor(maxDepth = Infinity, exclusionRules = []) {
         this.urlMap = new Map();
@@ -132,7 +135,6 @@ class HeadlessCrawler {
         if (!html) return [];
 
         try {
-            const { JSDOM } = require("jsdom");
             const dom = new JSDOM(html);
             const doc = dom.window.document;
 
@@ -380,20 +382,13 @@ class HeadlessCrawler {
                 };
             }
 
-            const puppeteer = require("puppeteer");
             const browser = await puppeteer.launch({
-                headless: "new",
+                // Modern headless is now default
                 args: [
                     "--no-sandbox",
                     "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-accelerated-2d-canvas",
-                    "--disable-gpu",
-                    "--no-first-run",
-                    "--no-zygote",
-                    "--single-process",
                 ],
-                executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null,
+                executablePath: process.env.CHROME_PATH || process.env.PUPPETEER_EXECUTABLE_PATH,
                 ignoreDefaultArgs: ["--disable-extensions"],
             });
 
@@ -427,4 +422,4 @@ class HeadlessCrawler {
     }
 }
 
-module.exports = HeadlessCrawler;
+export { HeadlessCrawler };
